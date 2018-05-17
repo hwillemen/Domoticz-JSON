@@ -2,9 +2,15 @@ from __future__ import print_function
 
 import requests
 import json
-import os, time
+import os, sys, time
+import threading
 #import subprocess, os, jsonrpclib, json, re, threading, time, traceback,sys
 
+"""
+This Library/Class is inspired by the description of the different JSON commands on:
+https://www.domoticz.com/wiki/Domoticz_API/JSON_URL%27s
+
+"""
 
 def find_dict(list, key, value, returnIdx=False):
 	for i, dic in enumerate(list):
@@ -14,20 +20,81 @@ def find_dict(list, key, value, returnIdx=False):
 			else:
 				return dic
 	return None
-
+	
 class DomoticzJSON():
-
 	def __init__(self,IP="localhost",port=8080):
 		self.apiUrl = "http://{}:{}/json.htm".format(IP,port)
 		self.headers = {'Accept': 'application/json', 'Content-type': 'application/json'}
 		self.debug_level = 1
+		self.devices = []
 
 	def SwitchLight(self,idx,state="On",repeat=0):
+		# http://192.168.11.4:8080/json.htm?type=command&param=switchlight&idx=41&switchcmd=On
+		postdata = {'type':'command', 'param':'switchlight','idx':str(idx),'switchcmd':state}
+		if self.debug_level == 1:
+			print(postdata)
+		for i in range(0,repeat+1):
+			#response = requests.post(url,data=json.dumps(postdata),headers=self.headers)
+			response = requests.get(url=self.apiUrl, params=postdata,headers=self.headers)
+			if response.status_code != 200 and self.debug_level == 2:
+				print(response.json())
+
+	def SetColBrightnessValue(self,idx,int=100,hue=None,RGB_hex=None,color=None,iswhite="false",repeat=0):
+		#http://192.168.11.4:8080/json.htm?type=command&param=setcolbrightnessvalue&idx=20&hue=274&brightness=40&iswhite=false
+		#http://192.168.11.4:8080/json.htm?type=command&param=setcolbrightnessvalue&idx=20&hex=0000FF&brightness=100&iswhite=false
+		#http://192.168.11.4:8080/json.htm?type=command&param=setcolbrightnessvalue&idx=20&color={"m":2,"t":127,"r":0,"g":0,"b":0,"cw":0,"ww":0}&brightness=40&iswhite=false
+		#color_set = {"m":2,"t":127,"r":0,"g":0,"b":0,"cw":0,"ww":0}
+		
+		#ToDo: check that only one of the color parameters is filled, otherwise give warning
+		postdata = {'type':'command', 'param':'setcolbrightnessvalue','idx':str(idx),'brightness':int}
+		if hue != None:
+			postdata['hue'] = hue
+			postdata['iswhite'] = iswhite
+		elif RGB_hex != None:
+			postdata['hex'] = RGB_hex
+			postdata['iswhite'] = iswhite
+		elif color != None:
+			postdata['color'] = color
+			
+		if self.debug_level == 1:
+			print(postdata)
+		for i in range(0,repeat+1):
+			#response = requests.post(url,data=json.dumps(postdata),headers=self.headers)
+			response = requests.get(url=self.apiUrl, params=postdata,headers=self.headers)
+			if response.status_code  != 200 and self.debug_level == 2:
+				print(response.json())
+
+	def SetKelvinLevel(self,idx,cct=100,repeat=0):
+		#http://192.168.11.4:8080/json.htm?type=command&param=setkelvinlevel&idx=20&kelvin=95
+		postdata = {'type':'command', 'param':'setkelvinlevel','idx':str(idx),'kelvin':str(cct)}
+		if self.debug_level == 1:
+			print(postdata)
+		for i in range(0,repeat+1):
+			#response = requests.post(url,data=json.dumps(postdata),headers=self.headers)
+			response = requests.get(url=self.apiUrl, params=postdata,headers=self.headers)
+			if response.status_code  != 200 and self.debug_level == 2:
+				print(response.json())
 
 
-setcolbrightnessvalue
-
-
+	def GetDeviceList(self):
+		#http://192.168.11.4:8080/json.htm?type=devices&filter=light&used=true&order=Name
+		#check that only one of the color parameters is filled, otherwise give warning
+		postdata = {'type':'devices', 'filter':'all','used':'true','order':'Name'}
+		#light = Get all lights/switches
+		#weather = Get all weather devices
+		#temp = Get all temperature devices
+		#utility = Get all utility devices
+		if self.debug_level == 1:
+			print(postdata)
+		response = requests.get(url=self.apiUrl, params=postdata,headers=self.headers)
+		resp_json = response.json()
+		if response.status_code  != 200 and self.debug_level == 2:
+			print(resp_json)
+		if 'result' in resp_json:
+			self.devices = resp_json['result']
+			if self.debug_level == 1:
+				print("Lights/Switches:\n{}".format(json.dumps(self.devices, indent=4, sort_keys=False)))
+			
 """
 class WebSocketWorkerThread(threading.Thread):
 
@@ -60,7 +127,6 @@ class WebSocketWorkerThread(threading.Thread):
 						  on_error = self.__on_error,
 						  on_close = self.__on_close)
 		self.ws.on_open = self.__on_open
-		#self.handlers = FunctionHandlers(device_mesh)
 
 	def run(self):
 		self.ws.run_forever()
@@ -73,6 +139,41 @@ class WebSocketWorkerThread(threading.Thread):
 		self.ws.send(json.dumps(msg))
 """
 
+domjson = DomoticzJSON("192.168.11.4",8080)
+domjson.GetDeviceList()
+
+TV_SW = find_dict(domjson.devices, 'Name', "TV_SW", returnIdx=False)
+Vitr_SW = find_dict(domjson.devices, 'Name', "Vitrine_SW", returnIdx=False)
+
+TV_RGBCCT = find_dict(domjson.devices, 'Name', "TV_RGBCCT01", returnIdx=False)
+TV_CCT = find_dict(domjson.devices, 'Name', "TV_CCT01", returnIdx=False)
+Vitr_RGBW = find_dict(domjson.devices, 'Name', "Vitrine_RGBW04", returnIdx=False)
+OVR_RGBW = find_dict(domjson.devices, 'Name', "OVR_RGBW_02", returnIdx=False)
+
+domjson.SwitchLight(TV_SW["idx"],state="On",repeat=3)
+time.sleep(1)
+domjson.SwitchLight(Vitr_SW["idx"],state="On",repeat=3)
+time.sleep(1)
+
+domjson.SetColBrightnessValue(Vitr_RGBW["idx"],int=100,RGB_hex="007F7F",repeat=2)
+time.sleep(1)
+
+for i in range(0,20):
+	domjson.SetKelvinLevel(TV_CCT["idx"],cct=str(i*5),repeat=0)
+
+domjson.SetColBrightnessValue(TV_RGBCCT["idx"],int=100,RGB_hex="7F0000",repeat=2)
+for i in range(0,36):
+	domjson.SetColBrightnessValue(TV_RGBCCT["idx"],int=100,hue=str(i*10),repeat=0)
+	#domjson.SetColBrightnessValue(20,int=100,RGB_hex="0000FF",repeat=2)
+
+time.sleep(1)
+
+domjson.SwitchLight(TV_SW["idx"],state="Off",repeat=3)
+time.sleep(1)
+domjson.SwitchLight(Vitr_SW["idx"],state="Off",repeat=3)
+time.sleep(1)
+
+sys.exit()
 
 #ft_server_ip = os.environ.get('FTS_IP', "localhost")
 server_ip = "192.168.11.4"
@@ -122,8 +223,11 @@ Color {
 #/json.htm?type=command&param=setcolbrightnessvalue&idx=130&color={"m":3,"t":0,"r":0,"g":0,"b":50,"cw":0,"ww":0}&brightness=100
 color_set = {"m":2,"t":127,"r":0,"g":0,"b":0,"cw":0,"ww":0}
 postdata = {'type':'command', 'param':'setcolbrightnessvalue','idx':'20','color':color_set,'brightness':100}
+
+"""
 http://192.168.11.4:8080/json.htm?type=command&param=setcolbrightnessvalue&idx=20&hue=274&brightness=40&iswhite=false
 http://192.168.11.4:8080/json.htm?type=command&param=setcolbrightnessvalue&idx=20&hex=0000FF&brightness=100&iswhite=false
+
 Milight supports 256 colors 00-FF there is no specific RGB value
 The brightness is controlled in 32 steps. 
 
@@ -133,7 +237,7 @@ to activate the debug feature within the Domoticz log.
 and
 10;rfdebug=off;
 to deactivate the debug feature. 
-
+"""
 print(postdata)
 response = requests.get(url=url, params=postdata,headers =headers)
 print(response)
